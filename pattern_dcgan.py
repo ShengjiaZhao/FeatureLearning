@@ -66,7 +66,7 @@ def generator(z):
 
 
 class GenerativeAdversarialNet(object):
-    def __init__(self):
+    def __init__(self, name="gan"):
         self.hidden_num = 100
         self.z = tf.placeholder(tf.float32, [None, self.hidden_num])
         self.x = tf.placeholder(tf.float32, [None, 28, 28, 1])
@@ -99,6 +99,8 @@ class GenerativeAdversarialNet(object):
         self.saver = tf.train.Saver(tf.global_variables())
 
         self.fig, self.ax = None, None
+        self.model_path = "log/%s" % name
+        self.fig_path = "%s/fig" % self.model_path
 
     def visualize(self, batch_size, sess):
         if self.fig is None:
@@ -112,6 +114,7 @@ class GenerativeAdversarialNet(object):
         for i in range(num_row):
             for j in range(num_row):
                 canvas[i*28:(i+1)*28, j*28:(j+1)*28] = image[i*num_row+j, :, :, 0]
+        misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas)
         self.ax.imshow(canvas, cmap=plt.get_cmap('Greys'))
         plt.draw()
         plt.pause(0.01)
@@ -119,18 +122,20 @@ class GenerativeAdversarialNet(object):
     def train(self):
         gen = PatternDataset()
         with tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))) as sess:
-            if os.path.isdir('log/train'):
-                subprocess.call('rm -rf log/train'.split())
-            os.makedirs('log/train')
-            summary_writer = tf.summary.FileWriter('./train')
+            if os.path.isdir(self.model_path):
+                subprocess.call(('rm -rf %s' % self.model_path).split())
+            os.makedirs(self.model_path)
+            summary_writer = tf.summary.FileWriter(self.model_path)
             sess.run(tf.global_variables_initializer())
             batch_size = 64
 
             start_time = time.time()
             for epoch in range(0, 1000):
-                self.visualize(batch_size, sess)
                 batch_idxs = 1093
                 for idx in range(0, batch_idxs):
+                    if idx % 500 == 0:
+                        self.visualize(batch_size, sess, epoch * 2 + idx / 500)
+
                     bx = gen.next_batch(batch_size)
                     bx = np.reshape(bx, [batch_size, 28, 28, 1])
                     bz = np.random.normal(-1, 1, [batch_size, self.hidden_num]).astype(np.float32)
@@ -146,12 +151,11 @@ class GenerativeAdversarialNet(object):
                     print("Epoch: [%2d] [%4d/%4d] time: %4.4f, d_loss_x: %.8f, d_loss_g: %.8f, g_loss: %.8f" \
                           % (epoch, idx, batch_idxs, time.time() - start_time, d_loss_x, d_loss_g, g_loss))
 
-                    if idx == 500:
-                        self.visualize(batch_size, sess)
-                if os.path.isdir('log/model'):
-                    subprocess.call('rm -rf log/model'.split())
-                os.makedirs('log/model')
-                self.saver.save(sess, 'log/model', global_step=epoch)
+                save_path = "%s/model" % self.model_path
+                if os.path.isdir(save_path):
+                    subprocess.call(('rm -rf %s' % save_path).split())
+                os.makedirs(save_path)
+                self.saver.save(sess, save_path, global_step=epoch)
 
 
 if __name__ == '__main__':
