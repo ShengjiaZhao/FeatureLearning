@@ -4,9 +4,7 @@ import time
 import subprocess
 import math
 from matplotlib import pyplot as plt
-
-from tensorflow.examples.tutorials.mnist import input_data
-mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
+from pattern_generator import *
 
 
 def lrelu(x, rate=0.1):
@@ -119,6 +117,7 @@ class GenerativeAdversarialNet(object):
         plt.pause(0.01)
 
     def train(self):
+        gen = PatternDataset()
         with tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))) as sess:
             if os.path.isdir('log/train'):
                 subprocess.call('rm -rf log/train'.split())
@@ -132,7 +131,7 @@ class GenerativeAdversarialNet(object):
                 self.visualize(batch_size, sess)
                 batch_idxs = 1093
                 for idx in range(0, batch_idxs):
-                    bx, _ = mnist.train.next_batch(batch_size)
+                    bx = gen.next_batch(batch_size)
                     bx = np.reshape(bx, [batch_size, 28, 28, 1])
                     bz = np.random.normal(-1, 1, [batch_size, self.hidden_num]).astype(np.float32)
                     d_loss, _ = sess.run([self.d_loss, self.d_train], feed_dict={self.x: bx, self.z: bz})
