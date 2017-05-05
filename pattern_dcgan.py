@@ -5,7 +5,7 @@ import subprocess
 import math
 from matplotlib import pyplot as plt
 from pattern_generator import *
-
+import scipy.misc as misc
 
 def lrelu(x, rate=0.1):
     return tf.maximum(tf.minimum(x * rate, 0), x)
@@ -102,7 +102,7 @@ class GenerativeAdversarialNet(object):
         self.model_path = "log/%s" % name
         self.fig_path = "%s/fig" % self.model_path
 
-    def visualize(self, batch_size, sess):
+    def visualize(self, batch_size, sess, save_idx):
         if self.fig is None:
             self.fig, self.ax = plt.subplots()
         else:
@@ -125,6 +125,7 @@ class GenerativeAdversarialNet(object):
             if os.path.isdir(self.model_path):
                 subprocess.call(('rm -rf %s' % self.model_path).split())
             os.makedirs(self.model_path)
+            os.makedirs(self.fig_path)
             summary_writer = tf.summary.FileWriter(self.model_path)
             sess.run(tf.global_variables_initializer())
             batch_size = 64

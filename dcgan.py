@@ -127,6 +127,7 @@ class GenerativeAdversarialNet(object):
             if os.path.isdir(self.model_path):
                 subprocess.call(('rm -rf %s' % self.model_path).split())
             os.makedirs(self.model_path)
+            os.makedirs(self.fig_path)
             summary_writer = tf.summary.FileWriter(self.model_path)
             sess.run(tf.global_variables_initializer())
             batch_size = 64
