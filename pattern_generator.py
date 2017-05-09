@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 import numpy as np
-
+import math
 
 # Generate dataset of symmetric images
 def generate_symmetric(size):
@@ -17,18 +17,54 @@ def generate_double_symmetric(size):
     return x
 
 
+def generate_striped(size):
+    x = np.random.random((size, size))
+    gx, gy = np.meshgrid(np.linspace(0, 1.0, size), np.linspace(0, 1.0, size))
+    z = np.sin(5 * (gx + 2 * gy))
+    return x * z
+
+
+def generate_varied_strips(size):
+    x = np.random.random((size, size))
+    gx, gy = np.meshgrid(np.linspace(0, 1.0, size), np.linspace(0, 1.0, size))
+    frequency = np.random.random() * 4.0 + 5.0
+    if np.random.random() > 0.5:
+        frequency *= -1.0
+    if np.random.random() > 0.5:
+        phase = math.pi / 2
+    else:
+        phase = 0.0
+    x_ratio = (np.random.random() * 0.8 + 0.1) / 0.3
+    if np.random.random() > 0.5:
+        x_ratio *= -1
+    z = np.sin(frequency * (gx + x_ratio * gy) + phase)
+    return x * z
+
+
 class PatternDataset:
     def __init__(self, size=28, type='symmetric'):
         self.type = type
         self.size = size
+        if type == 'symmetric':
+            self.gen = generate_symmetric
+        elif type == 'striped':
+            self.gen = generate_striped
+        elif type == 'vstriped':
+            self.gen = generate_varied_strips
+        else:
+            print("Unknown pattern type")
+            exit(-1)
 
     def next_batch(self, batch_size):
         data_batch = np.zeros((batch_size, self.size, self.size))
         for i in range(batch_size):
-            data_batch[i, :, :] = generate_symmetric(self.size)
+            data_batch[i, :, :] = self.gen(self.size)
         return data_batch
 
+
 if __name__ == '__main__':
-    x = generate_double_symmetric(6)
-    plt.imshow(x, interpolation='none', cmap='Greys')
+    for i in range(16):
+        x = generate_varied_strips(20)
+        plt.subplot(4, 4, i+1)
+        plt.imshow(x, interpolation='none', cmap='Greys')
     plt.show()

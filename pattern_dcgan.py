@@ -4,7 +4,7 @@ import tensorflow as tf
 import numpy as np
 import time
 import subprocess
-import math
+import math, os
 from matplotlib import pyplot as plt
 from pattern_generator import *
 import scipy.misc as misc
@@ -162,7 +162,19 @@ class GenerativeAdversarialNet(object):
 
 
 if __name__ == '__main__':
-    import os
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-    c = GenerativeAdversarialNet()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--gpus', type=str, default='')
+    parser.add_argument('--type', type=str, default='symmetric')
+    parser.add_argument('--netname', type=str, default='')
+
+    args = parser.parse_args()
+
+    if args.gpus is not '':
+        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
+
+    if args.netname == '':
+        args.netname = 'gan_%s' % args.type
+    c = GenerativeAdversarialNet(name=args.netname)
     c.train()
