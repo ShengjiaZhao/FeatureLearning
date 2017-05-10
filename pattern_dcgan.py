@@ -8,6 +8,7 @@ import math, os
 from matplotlib import pyplot as plt
 from pattern_generator import *
 import scipy.misc as misc
+from abstract_network import *
 
 def lrelu(x, rate=0.1):
     return tf.maximum(tf.minimum(x * rate, 0), x)
@@ -16,55 +17,42 @@ def discriminator(x, reuse=False):
     with tf.variable_scope('d_net') as vs:
         if reuse:
             vs.reuse_variables()
-        conv1 = tf.contrib.layers.convolution2d(x, 64, [4, 4], [2, 2],
-                                                weights_initializer=tf.random_normal_initializer(stddev=0.02),
-                                                weights_regularizer=tf.contrib.layers.l2_regularizer(2.5e-5),
-                                                activation_fn=tf.identity)
-        conv1 = lrelu(conv1)
-        conv2 = tf.contrib.layers.convolution2d(conv1, 128, [4, 4], [2, 2],
-                                                weights_initializer=tf.random_normal_initializer(stddev=0.02),
-                                                weights_regularizer=tf.contrib.layers.l2_regularizer(2.5e-5),
-                                                activation_fn=tf.identity)
-        conv2 = tf.contrib.layers.batch_norm(conv2)
-        conv2 = lrelu(conv2)
+        conv1 = conv2d_lrelu(x, 64, 4, 2)
+        conv2 = conv2d_lrelu(conv1, 128, 4, 2)
         conv2 = tf.reshape(conv2, [-1, np.prod(conv2.get_shape().as_list()[1:])])
-        fc1 = tf.contrib.layers.fully_connected(conv2, 1024,
-                                                weights_initializer=tf.random_normal_initializer(stddev=0.02),
-                                                weights_regularizer=tf.contrib.layers.l2_regularizer(2.5e-5),
-                                                activation_fn=tf.identity)
-        fc1 = tf.contrib.layers.batch_norm(fc1)
-        fc1 = lrelu(fc1)
+        fc1 = fc_lrelu(conv2, 1024)
         fc2 = tf.contrib.layers.fully_connected(fc1, 1, activation_fn=tf.identity)
-        return tf.sigmoid(fc2), fc2
+        return fc2
+
+
+def mlp_discriminator(x, reuse=False):
+    with tf.variable_scope('d_net') as vs:
+        if reuse:
+            vs.reuse_variables()
+        fc1 = fc_lrelu(x, 2048)
+        fc2 = fc_lrelu(fc1, 2048)
+        fc3 = fc_lrelu(fc2, 2048)
+        fc4 = tf.contrib.layers.fully_connected(fc3, 1, activation_fn=tf.identity)
+        return fc4
 
 
 def generator(z):
     with tf.variable_scope('g_net') as vs:
-        fc1 = tf.contrib.layers.fully_connected(z, 1024,
-                                                weights_initializer=tf.random_normal_initializer(stddev=0.02),
-                                                weights_regularizer=tf.contrib.layers.l2_regularizer(2.5e-5),
-                                                activation_fn=tf.identity)
-        fc1 = tf.contrib.layers.batch_norm(fc1)
-        fc1 = tf.nn.relu(fc1)
-        fc2 = tf.contrib.layers.fully_connected(fc1, 7 * 7 * 128,
-                                                weights_initializer=tf.random_normal_initializer(stddev=0.02),
-                                                weights_regularizer=tf.contrib.layers.l2_regularizer(2.5e-5),
-                                                activation_fn=tf.identity)
+        fc1 = fc_bn_relu(z, 1024)
+        fc2 = fc_bn_relu(fc1, 7*7*128)
         fc2 = tf.reshape(fc2, tf.stack([tf.shape(fc2)[0], 7, 7, 128]))
-        fc2 = tf.contrib.layers.batch_norm(fc2)
-        fc2 = tf.nn.relu(fc2)
-        conv1 = tf.contrib.layers.convolution2d_transpose(fc2, 64, [4, 4], 2,
-                                                          weights_initializer=tf.random_normal_initializer(stddev=0.02),
-                                                          weights_regularizer=tf.contrib.layers.l2_regularizer(2.5e-5),
-                                                          activation_fn=tf.identity)
-        conv1 = tf.contrib.layers.batch_norm(conv1)
-        conv1 = tf.nn.relu(conv1)
-        output = tf.contrib.layers.convolution2d_transpose(conv1, 1, [4, 4], 2, activation_fn=tf.sigmoid)
-        # mask = np.ones((28, 28, 1))
-
-        # output = tf.concat([output[:, 3:, :, :], tf.ones(tf.stack([tf.shape(output)[0], 3, 28, 1]))], 1)
-        # output[:, 10:13, 10:13, :] = 0.0
+        conv1 = conv2d_t_bn_relu(fc2, 64, 4, 2)
+        output = tf.contrib.layers.convolution2d_transpose(conv1, 1, 4, 2, activation_fn=tf.sigmoid)
         return output
+
+
+def mlp_generator(z):
+    with tf.variable_scope('g_net') as vs:
+        fc1 = fc_bn_relu(z, 1024)
+        fc2 = fc_bn_relu(fc1, 2048)
+        fc3 = fc_bn_relu(fc2, 2048)
+        output = tf.contrib.layers.fully_connected(fc3, 28*28, activation_fn=tf.sigmoid)
+        return tf.reshape(output, [-1, 28, 28, 1])
 
 
 class GenerativeAdversarialNet(object):
@@ -73,19 +61,27 @@ class GenerativeAdversarialNet(object):
         self.z = tf.placeholder(tf.float32, [None, self.hidden_num])
         self.x = tf.placeholder(tf.float32, [None, 28, 28, 1])
         self.g = generator(self.z)
-        self.d, self.d_logits = discriminator(self.x)
-        self.d_, self.d_logits_ = discriminator(self.g, reuse=True)
+        self.d = discriminator(self.x)
+        self.d_ = discriminator(self.g, reuse=True)
 
-        self.d_loss_x = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.d_logits, labels=tf.ones_like(self.d)))
-        self.d_loss_g = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.d_logits_, labels=tf.zeros_like(self.d_)))
-        self.d_loss = self.d_loss_x + self.d_loss_g
-        self.g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.d_logits_, labels=tf.ones_like(self.d_)))
+        epsilon = tf.random_uniform([], 0.0, 1.0)
+        x_hat = epsilon * self.x + (1 - epsilon) * self.g
+        d_hat = discriminator(x_hat, reuse=True)
+
+        ddx = tf.gradients(d_hat, x_hat)[0]
+        ddx = tf.sqrt(tf.reduce_sum(tf.square(ddx), axis=(1, 2, 3)))
+        self.d_grad_loss = tf.reduce_mean(tf.square(ddx - 1.0) * 10.0)
+
+        self.d_loss_x = -tf.reduce_mean(self.d)
+        self.d_loss_g = tf.reduce_mean(self.d_)
+        self.d_loss = self.d_loss_x + self.d_loss_g + self.d_grad_loss
+        self.g_loss = -tf.reduce_mean(self.d_)
         self.loss = self.d_loss + self.g_loss
 
         self.d_vars = [var for var in tf.global_variables() if 'd_net' in var.name]
         self.g_vars = [var for var in tf.global_variables() if 'g_net' in var.name]
-        self.d_train = tf.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5).minimize(self.d_loss, var_list=self.d_vars)
-        self.g_train = tf.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5).minimize(self.g_loss, var_list=self.g_vars)
+        self.d_train = tf.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5, beta2=0.9).minimize(self.d_loss, var_list=self.d_vars)
+        self.g_train = tf.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5, beta2=0.9).minimize(self.g_loss, var_list=self.g_vars)
 
         # self.d_gradient_ = tf.gradients(self.d_loss_g, self.g)[0]
         # self.d_gradient = tf.gradients(self.d_logits, self.x)[0]
@@ -142,11 +138,9 @@ class GenerativeAdversarialNet(object):
                     bx = gen.next_batch(batch_size)
                     bx = np.reshape(bx, [batch_size, 28, 28, 1])
                     bz = np.random.normal(-1, 1, [batch_size, self.hidden_num]).astype(np.float32)
-                    d_loss, _ = sess.run([self.d_loss, self.d_train], feed_dict={self.x: bx, self.z: bz})
-                    d_loss_g, d_loss_x = sess.run([self.d_loss_g, self.d_loss_x], feed_dict={self.x: bx, self.z: bz})
+                    d_loss, _, d_loss_g, d_loss_x = sess.run([self.d_loss, self.d_train, self.d_loss_g, self.d_loss_x],
+                                                             feed_dict={self.x: bx, self.z: bz})
                     g_loss, _ = sess.run([self.g_loss, self.g_train], feed_dict={self.z: bz})
-                    g_loss, _ = sess.run([self.g_loss, self.g_train], feed_dict={self.z: bz})
-                    g_loss, = sess.run([self.g_loss], feed_dict={self.z: bz})
 
                     merged = sess.run(self.merged, feed_dict={self.x: bx, self.z: bz})
                     summary_writer.add_summary(merged, epoch * batch_idxs + idx)
@@ -178,3 +172,11 @@ if __name__ == '__main__':
         args.netname = 'gan_%s' % args.type
     c = GenerativeAdversarialNet(name=args.netname)
     c.train()
+
+
+# Use histogram between the two distributions as a numerical metric of fitting accuracy
+# Even though for many patterns the log likelihood can be accurately estimated, it is a poor indicator of visual appeal
+# Use a low dimensional noise vector so that it is impossible for generator to represent the full distribution
+# Study the relationship of generator capacity, discriminator capacity vs. quality
+# Question: 1. verify that invariant discriminator is the reason for GAN success
+# 2. study the relationship between discriminator form and the invariance it encodes

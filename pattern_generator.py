@@ -41,15 +41,20 @@ def generate_varied_strips(size):
     return x * z
 
 
+# GANs may be very bad at counting, construct a dataset with a constant number of random dots
+def generate_dots(size):
+    x = np.random.random((size, size))
+
+
 class PatternDataset:
     def __init__(self, size=28, type='symmetric'):
         self.type = type
         self.size = size
         if type == 'symmetric':
             self.gen = generate_symmetric
-        elif type == 'striped':
+        elif type == 'stripe':
             self.gen = generate_striped
-        elif type == 'vstriped':
+        elif type == 'vstripe':
             self.gen = generate_varied_strips
         else:
             print("Unknown pattern type")

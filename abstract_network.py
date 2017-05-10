@@ -26,6 +26,14 @@ def conv2d_bn_lrelu(inputs, num_outputs, kernel_size, stride):
     return conv
 
 
+def conv2d_lrelu(inputs, num_outputs, kernel_size, stride):
+    conv = tf.contrib.layers.convolution2d(inputs, num_outputs, kernel_size, stride,
+                                           weights_initializer=tf.random_normal_initializer(stddev=0.02),
+                                           activation_fn=tf.identity)
+    conv = lrelu(conv)
+    return conv
+
+
 def conv2d_t_bn_relu(inputs, num_outputs, kernel_size, stride):
     conv = tf.contrib.layers.convolution2d_transpose(inputs, num_outputs, kernel_size, stride,
                                                      weights_initializer=tf.random_normal_initializer(stddev=0.02),
@@ -72,6 +80,13 @@ def fc_bn_lrelu(inputs, num_outputs):
     fc = lrelu(fc)
     return fc
 
+
+def fc_lrelu(inputs, num_outputs):
+    fc = tf.contrib.layers.fully_connected(inputs, num_outputs,
+                                           weights_initializer=tf.random_normal_initializer(stddev=0.02),
+                                           activation_fn=tf.identity)
+    fc = lrelu(fc)
+    return fc
 
 def fc_bn_relu(inputs, num_outputs):
     fc = tf.contrib.layers.fully_connected(inputs, num_outputs,
