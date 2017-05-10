@@ -29,6 +29,7 @@ def mlp_discriminator(x, reuse=False):
     with tf.variable_scope('d_net') as vs:
         if reuse:
             vs.reuse_variables()
+        x = tf.reshape(x, [-1, np.prod(x.get_shape().as_list()[1:])])
         fc1 = fc_lrelu(x, 1024)
         fc2 = fc_lrelu(fc1, 1024)
         fc3 = fc_lrelu(fc2, 1024)
