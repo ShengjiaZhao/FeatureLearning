@@ -56,7 +56,8 @@ def mlp_generator(z):
 
 
 class GenerativeAdversarialNet(object):
-    def __init__(self, name="gan"):
+    def __init__(self, dataset, name="gan"):
+        self.dataset = dataset
         self.hidden_num = 100
         self.z = tf.placeholder(tf.float32, [None, self.hidden_num])
         self.x = tf.placeholder(tf.float32, [None, 28, 28, 1])
@@ -118,7 +119,6 @@ class GenerativeAdversarialNet(object):
         plt.pause(0.01)
 
     def train(self):
-        gen = PatternDataset()
         with tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))) as sess:
             if os.path.isdir(self.model_path):
                 subprocess.call(('rm -rf %s' % self.model_path).split())
@@ -135,7 +135,7 @@ class GenerativeAdversarialNet(object):
                     if idx % 500 == 0:
                         self.visualize(batch_size, sess, epoch * 2 + idx / 500)
 
-                    bx = gen.next_batch(batch_size)
+                    bx = self.dataset.next_batch(batch_size)
                     bx = np.reshape(bx, [batch_size, 28, 28, 1])
                     bz = np.random.normal(-1, 1, [batch_size, self.hidden_num]).astype(np.float32)
                     d_loss, _, d_loss_g, d_loss_x = sess.run([self.d_loss, self.d_train, self.d_loss_g, self.d_loss_x],
@@ -170,7 +170,8 @@ if __name__ == '__main__':
 
     if args.netname == '':
         args.netname = 'gan_%s' % args.type
-    c = GenerativeAdversarialNet(name=args.netname)
+    dataset = PatternDataset(args.type)
+    c = GenerativeAdversarialNet(dataset, name=args.netname)
     c.train()
 
 
