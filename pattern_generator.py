@@ -69,7 +69,7 @@ class PatternDataset:
 
 if __name__ == '__main__':
     for i in range(16):
-        x = generate_varied_strips(20)
+        x = generate_varied_strips(28)
         plt.subplot(4, 4, i+1)
         plt.imshow(x, interpolation='none', cmap='Greys')
     plt.show()

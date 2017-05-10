@@ -170,7 +170,7 @@ if __name__ == '__main__':
 
     if args.netname == '':
         args.netname = 'gan_%s' % args.type
-    dataset = PatternDataset(args.type)
+    dataset = PatternDataset(type=args.type)
     c = GenerativeAdversarialNet(dataset, name=args.netname)
     c.train()
 
