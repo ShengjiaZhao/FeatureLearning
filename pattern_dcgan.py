@@ -13,7 +13,7 @@ from abstract_network import *
 def lrelu(x, rate=0.1):
     return tf.maximum(tf.minimum(x * rate, 0), x)
 
-def discriminator(x, reuse=False):
+def conv_discriminator(x, reuse=False):
     with tf.variable_scope('d_net') as vs:
         if reuse:
             vs.reuse_variables()
@@ -29,14 +29,14 @@ def mlp_discriminator(x, reuse=False):
     with tf.variable_scope('d_net') as vs:
         if reuse:
             vs.reuse_variables()
-        fc1 = fc_lrelu(x, 2048)
-        fc2 = fc_lrelu(fc1, 2048)
-        fc3 = fc_lrelu(fc2, 2048)
+        fc1 = fc_lrelu(x, 1024)
+        fc2 = fc_lrelu(fc1, 1024)
+        fc3 = fc_lrelu(fc2, 1024)
         fc4 = tf.contrib.layers.fully_connected(fc3, 1, activation_fn=tf.identity)
         return fc4
 
 
-def generator(z):
+def conv_generator(z):
     with tf.variable_scope('g_net') as vs:
         fc1 = fc_bn_relu(z, 1024)
         fc2 = fc_bn_relu(fc1, 7*7*128)
@@ -49,8 +49,8 @@ def generator(z):
 def mlp_generator(z):
     with tf.variable_scope('g_net') as vs:
         fc1 = fc_bn_relu(z, 1024)
-        fc2 = fc_bn_relu(fc1, 2048)
-        fc3 = fc_bn_relu(fc2, 2048)
+        fc2 = fc_bn_relu(fc1, 1024)
+        fc3 = fc_bn_relu(fc2, 1024)
         output = tf.contrib.layers.fully_connected(fc3, 28*28, activation_fn=tf.sigmoid)
         return tf.reshape(output, [-1, 28, 28, 1])
 
@@ -58,9 +58,19 @@ def mlp_generator(z):
 class GenerativeAdversarialNet(object):
     def __init__(self, dataset, name="gan"):
         self.dataset = dataset
-        self.hidden_num = 100
+        self.hidden_num = 10
         self.z = tf.placeholder(tf.float32, [None, self.hidden_num])
         self.x = tf.placeholder(tf.float32, [None, 28, 28, 1])
+
+        if "mlpgen" in name:
+            generator = mlp_generator
+        else:
+            generator = conv_generator
+        if "mlpdisc" in name:
+            discriminator = mlp_discriminator
+        else:
+            discriminator = conv_discriminator
+
         self.g = generator(self.z)
         self.d = discriminator(self.x)
         self.d_ = discriminator(self.g, reuse=True)
