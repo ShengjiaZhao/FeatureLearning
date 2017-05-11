@@ -1,5 +1,3 @@
-import matplotlib
-matplotlib.use('Agg')
 import tensorflow as tf
 import numpy as np
 import time
@@ -9,11 +7,12 @@ from matplotlib import pyplot as plt
 from pattern_generator import *
 import scipy.misc as misc
 from abstract_network import *
+from dataset import *
 
 def lrelu(x, rate=0.1):
     return tf.maximum(tf.minimum(x * rate, 0), x)
 
-def conv_discriminator(x, reuse=False):
+def conv_discriminator(x, data_dims, reuse=False):
     with tf.variable_scope('d_net') as vs:
         if reuse:
             vs.reuse_variables()
@@ -24,6 +23,21 @@ def conv_discriminator(x, reuse=False):
         fc2 = tf.contrib.layers.fully_connected(fc1, 1, activation_fn=tf.identity)
         return fc2
 
+def conv_large_discriminator(x, data_dims, reuse=False):
+    with tf.variable_scope('d_net') as vs:
+        if reuse:
+            vs.reuse_variables()
+        conv1 = conv2d_lrelu(x, 64, 4, 2)   # 32x32
+        conv2 = conv2d_lrelu(conv1, 128, 4, 2)  # 16x16
+        conv3 = conv2d_lrelu(conv2, 128, 4, 1)
+        conv4 = conv2d_lrelu(conv3, 256, 4, 2)  # 8x8
+        conv5 = conv2d_lrelu(conv4, 256, 4, 1)
+        conv6 = conv2d_lrelu(conv5, 512, 4, 2)  # 4x4
+        conv6 = tf.reshape(conv6, [-1, np.prod(conv6.get_shape().as_list()[1:])])
+        fc1 = fc_lrelu(conv6, 1024)
+        fc2 = fc_lrelu(fc1, 1024)
+        fc3 = tf.contrib.layers.fully_connected(fc2, 1, activation_fn=tf.identity)
+        return fc3
 
 def mlp_discriminator(x, reuse=False):
     with tf.variable_scope('d_net') as vs:
@@ -36,15 +50,31 @@ def mlp_discriminator(x, reuse=False):
         fc4 = tf.contrib.layers.fully_connected(fc3, 1, activation_fn=tf.identity)
         return fc4
 
-
-def conv_generator(z):
+def conv_large_generator(z, data_dims, range):
     with tf.variable_scope('g_net') as vs:
         fc1 = fc_bn_relu(z, 1024)
-        fc2 = fc_bn_relu(fc1, 7*7*128)
-        fc2 = tf.reshape(fc2, tf.stack([tf.shape(fc2)[0], 7, 7, 128]))
+        fc2 = fc_bn_relu(fc1, 1024)
+        fc3 = fc_bn_relu(fc2, data_dims[0]/16*data_dims[1]/16*512)
+        fc3 = tf.reshape(fc3, tf.stack([tf.shape(fc3)[0], data_dims[0] / 16, data_dims[1] / 16, 512]))
+        conv1 = conv2d_t_bn_relu(fc3, 256, 4, 2)
+        conv2 = conv2d_t_bn_relu(conv1, 256, 4, 1)
+        conv3 = conv2d_t_bn_relu(conv2, 128, 4, 2)
+        conv4 = conv2d_t_bn_relu(conv3, 128, 4, 1)
+        conv5 = conv2d_t_bn_relu(conv4, 64, 4, 2)
+        conv6 = conv2d_t(conv5, data_dims[-1], 4, 2, activation_fn=tf.sigmoid)
+        conv6 = conv6 * (range[1] - range[0]) + range[0]
+        return conv6
+
+
+def conv_generator(z, data_dims, range):
+    with tf.variable_scope('g_net') as vs:
+        fc1 = fc_bn_relu(z, 1024)
+        fc2 = fc_bn_relu(fc1, data_dims[0]/4*data_dims[1]/4*128)
+        fc2 = tf.reshape(fc2, tf.stack([tf.shape(fc2)[0], data_dims[0]/4, data_dims[1]/4, 128]))
         conv1 = conv2d_t_bn_relu(fc2, 64, 4, 2)
-        output = tf.contrib.layers.convolution2d_transpose(conv1, 1, 4, 2, activation_fn=tf.sigmoid)
-        return output
+        conv2 = tf.contrib.layers.convolution2d_transpose(conv1, data_dims[-1], 4, 2, activation_fn=tf.sigmoid)
+        conv2 = conv2 * (range[1] - range[0]) + range[0]
+        return conv2
 
 
 def mlp_generator(z):
@@ -59,26 +89,25 @@ def mlp_generator(z):
 class GenerativeAdversarialNet(object):
     def __init__(self, dataset, name="gan"):
         self.dataset = dataset
+        self.data_dims = dataset.data_dims
         self.hidden_num = 10
         self.z = tf.placeholder(tf.float32, [None, self.hidden_num])
-        self.x = tf.placeholder(tf.float32, [None, 28, 28, 1])
+        self.x = tf.placeholder(tf.float32, [None] + self.data_dims)
 
-        if "mlpgen" in name:
-            generator = mlp_generator
+        if "large" in name:
+            generator = conv_large_generator
+            discriminator = conv_large_discriminator
         else:
             generator = conv_generator
-        if "mlpdisc" in name:
-            discriminator = mlp_discriminator
-        else:
             discriminator = conv_discriminator
 
-        self.g = generator(self.z)
-        self.d = discriminator(self.x)
-        self.d_ = discriminator(self.g, reuse=True)
+        self.g = generator(self.z, data_dims=self.data_dims, range=dataset.range)
+        self.d = discriminator(self.x, data_dims=self.data_dims)
+        self.d_ = discriminator(self.g, data_dims=self.data_dims, reuse=True)
 
         epsilon = tf.random_uniform([], 0.0, 1.0)
         x_hat = epsilon * self.x + (1 - epsilon) * self.g
-        d_hat = discriminator(x_hat, reuse=True)
+        d_hat = discriminator(x_hat, data_dims=self.data_dims, reuse=True)
 
         ddx = tf.gradients(d_hat, x_hat)[0]
         ddx = tf.sqrt(tf.reduce_sum(tf.square(ddx), axis=(1, 2, 3)))
@@ -120,12 +149,18 @@ class GenerativeAdversarialNet(object):
         bz = np.random.normal(-1, 1, [batch_size, self.hidden_num]).astype(np.float32)
         image = sess.run(self.g, feed_dict={self.z: bz})
         num_row = int(math.floor(math.sqrt(batch_size)))
-        canvas = np.zeros((28*num_row, 28*num_row))
+        canvas = np.zeros((self.data_dims[0]*num_row, self.data_dims[1]*num_row, self.data_dims[2]))
         for i in range(num_row):
             for j in range(num_row):
-                canvas[i*28:(i+1)*28, j*28:(j+1)*28] = image[i*num_row+j, :, :, 0]
-        misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas)
-        self.ax.imshow(canvas, cmap=plt.get_cmap('Greys'))
+                canvas[i*self.data_dims[0]:(i+1)*self.data_dims[0], j*self.data_dims[1]:(j+1)*self.data_dims[1], :] = \
+                    image[i*num_row+j, :, :, :]
+
+        if canvas.shape[-1] == 1:
+            misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas[:, :, 0])
+            self.ax.imshow(canvas[:, :, 0], cmap=plt.get_cmap('Greys'))
+        else:
+            misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas)
+            self.ax.imshow(canvas)
         plt.draw()
         plt.pause(0.01)
 
@@ -147,7 +182,6 @@ class GenerativeAdversarialNet(object):
                         self.visualize(batch_size, sess, epoch * 2 + idx / 500)
 
                     bx = self.dataset.next_batch(batch_size)
-                    bx = np.reshape(bx, [batch_size, 28, 28, 1])
                     bz = np.random.normal(-1, 1, [batch_size, self.hidden_num]).astype(np.float32)
                     d_loss, _, d_loss_g, d_loss_x = sess.run([self.d_loss, self.d_train, self.d_loss_g, self.d_loss_x],
                                                              feed_dict={self.x: bx, self.z: bz})
@@ -167,22 +201,20 @@ class GenerativeAdversarialNet(object):
 
 
 if __name__ == '__main__':
-    import argparse
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--gpus', type=str, default='')
-    parser.add_argument('--type', type=str, default='symmetric')
-    parser.add_argument('--netname', type=str, default='')
-
-    args = parser.parse_args()
-
-    if args.gpus is not '':
-        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
-
-    if args.netname == '':
-        args.netname = 'gan_%s' % args.type
-    dataset = PatternDataset(type=args.type)
-    c = GenerativeAdversarialNet(dataset, name=args.netname)
+    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+    netname = 'celeba_large'
+    dataset = None
+    if 'mnist' in netname:
+        dataset = MnistDataset()
+    elif 'cifar' in netname:
+        dataset = CifarDataset()
+    elif 'celeba' in netname:
+        dataset = CelebADataset(db_path='/ssd_data/CelebA')
+    else:
+        print("unknown dataset")
+        exit(-1)
+    c = GenerativeAdversarialNet(dataset, name=netname)
     c.train()
 
 
