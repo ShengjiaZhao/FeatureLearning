@@ -9,6 +9,7 @@ import scipy.misc as misc
 from abstract_network import *
 from dataset import *
 
+
 def lrelu(x, rate=0.1):
     return tf.maximum(tf.minimum(x * rate, 0), x)
 
