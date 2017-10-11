@@ -196,9 +196,9 @@ class GenerativeAdversarialNet(object):
                     image[i*num_row+j, :, :, :]
 
         if canvas.shape[-1] == 1:
-            misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas[:, :, 0])
+            misc.imsave("%s/s%d.png" % (self.fig_path, save_idx), canvas[:, :, 0])
         else:
-            misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas)
+            misc.imsave("%s/s%d.png" % (self.fig_path, save_idx), canvas)
 
     def visualize_reconstruction(self, batch_size, sess, save_idx):
         bx = self.dataset.next_batch(batch_size)
@@ -210,9 +210,9 @@ class GenerativeAdversarialNet(object):
                 canvas[i*self.data_dims[0]:(i+1)*self.data_dims[0], j*self.data_dims[1]:(j+1)*self.data_dims[1], :] = \
                     image[i, j, :, :, :]
         if canvas.shape[-1] == 1:
-            misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas[:, :, 0])
+            misc.imsave("%s/r%d.png" % (self.fig_path, save_idx), canvas[:, :, 0])
         else:
-            misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas)
+            misc.imsave("%s/r%d.png" % (self.fig_path, save_idx), canvas)
 
     def train(self):
         with tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))) as sess:
