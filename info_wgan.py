@@ -140,11 +140,15 @@ class GenerativeAdversarialNet(object):
         self.wake_zmean, self.wake_zstddev = inference(self.x, self.z_dim)
         self.wake_kl_loss = -tf.log(self.wake_zstddev) + 0.5 * tf.square(self.wake_zstddev) + 0.5 * tf.square(self.wake_zmean) - 0.5
         self.wake_kl_loss = tf.reduce_mean(tf.reduce_sum(self.wake_kl_loss, axis=1))
+        self.wake_z = self.wake_zmean + tf.multiply(self.wake_zstddev,
+                                                    tf.random_normal(tf.stack([tf.shape(self.x)[0], self.z_dim])))
+        self.wake_x = generator(self.wake_z, data_dims=self.data_dims, range=dataset.range, reuse=True)
+        self.wake_x_loss = tf.reduce_mean(tf.reduce_sum(tf.square(self.wake_x - self.x), axis=1))
 
         self.sleep_zmean, self.sleep_zstddev = inference(self.g, self.z_dim, reuse=True)
         self.sleep_kl_loss = tf.log(self.wake_zstddev) + 0.5 / tf.square(self.wake_zstddev) + 0.5 * tf.square(self.wake_zmean) / tf.square(self.wake_zstddev) - 0.5
         self.sleep_kl_loss = tf.reduce_mean(tf.reduce_sum(self.sleep_kl_loss, axis=1))
-        self.i_loss = self.wake_kl_loss * args.ratio + self.sleep_kl_loss
+        self.i_loss = (self.wake_kl_loss + self.wake_x_loss) * args.ratio + self.sleep_kl_loss
 
         self.d_vars = [var for var in tf.global_variables() if 'd_net' in var.name]
         self.g_vars = [var for var in tf.global_variables() if 'g_net' in var.name]
@@ -163,6 +167,7 @@ class GenerativeAdversarialNet(object):
             tf.summary.scalar('i_loss_wake', self.wake_kl_loss),
             tf.summary.scalar('i_loss_sleep', self.sleep_kl_loss),
             tf.summary.scalar('i_loss', self.i_loss),
+            tf.summary.scalar('i_loss_xwake', self.wake_x_loss),
             tf.summary.scalar('gan_loss', self.gan_loss)
         ])
 
@@ -180,7 +185,7 @@ class GenerativeAdversarialNet(object):
         os.makedirs(log_path)
         return log_path
 
-    def visualize(self, batch_size, sess, save_idx):
+    def visualize_samples(self, batch_size, sess, save_idx):
         bz = np.random.normal(-1, 1, [batch_size, self.z_dim]).astype(np.float32)
         image = sess.run(self.g, feed_dict={self.z: bz})
         num_row = int(math.floor(math.sqrt(batch_size)))
@@ -190,6 +195,20 @@ class GenerativeAdversarialNet(object):
                 canvas[i*self.data_dims[0]:(i+1)*self.data_dims[0], j*self.data_dims[1]:(j+1)*self.data_dims[1], :] = \
                     image[i*num_row+j, :, :, :]
 
+        if canvas.shape[-1] == 1:
+            misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas[:, :, 0])
+        else:
+            misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas)
+
+    def visualize_reconstruction(self, batch_size, sess, save_idx):
+        bx = self.dataset.next_batch(batch_size)
+        reconstruction = sess.run(self.wake_x, feed_dict={self.x: bx})
+        image = np.stack([bx, reconstruction])
+        canvas = np.zeros((self.data_dims[0]*2, self.data_dims[1]*batch_size, self.data_dims[2]))
+        for i in range(2):
+            for j in range(batch_size):
+                canvas[i*self.data_dims[0]:(i+1)*self.data_dims[0], j*self.data_dims[1]:(j+1)*self.data_dims[1], :] = \
+                    image[i, j, :, :, :]
         if canvas.shape[-1] == 1:
             misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas[:, :, 0])
         else:
@@ -210,7 +229,8 @@ class GenerativeAdversarialNet(object):
                 batch_idxs = 1093
                 for idx in range(0, batch_idxs):
                     if idx % 500 == 0:
-                        self.visualize(batch_size, sess, epoch * 2 + idx / 500)
+                        self.visualize_samples(batch_size, sess, epoch * 2 + idx / 500)
+                        self.visualize_reconstruction(batch_size, sess, epoch * 2 + idx / 500)
 
                     bx = self.dataset.next_batch(batch_size)
                     bz = np.random.normal(-1, 1, [batch_size, self.z_dim]).astype(np.float32)
