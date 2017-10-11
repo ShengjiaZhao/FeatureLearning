@@ -136,7 +136,7 @@ if __name__ == '__main__':
     parser.add_argument('--netname', type=str, default='')
     parser.add_argument('--layers', type=int, default=2)
     parser.add_argument('--gsize', type=int, default=1024)
-    parser.add_argument('--dsize', type=int, default=1024)
+    parser.add_argument('--dsize', type=int, default=32)
 
     args = parser.parse_args()
 
