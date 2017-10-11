@@ -146,9 +146,11 @@ class GenerativeAdversarialNet(object):
         self.wake_x_loss = tf.reduce_mean(tf.reduce_sum(tf.square(self.wake_x - self.x), axis=1))
 
         self.sleep_zmean, self.sleep_zstddev = inference(self.g, self.z_dim, reuse=True)
-        self.sleep_kl_loss = tf.log(self.wake_zstddev) + 0.5 / tf.square(self.wake_zstddev) + 0.5 * tf.square(self.wake_zmean) / tf.square(self.wake_zstddev) - 0.5
-        self.sleep_kl_loss = tf.reduce_mean(tf.reduce_sum(self.sleep_kl_loss, axis=1))
-        self.i_loss = (self.wake_kl_loss + self.wake_x_loss) * args.ratio + self.sleep_kl_loss
+        self.sleep_z_loss = tf.div(tf.square(self.sleep_zmean - self.z), tf.square(self.sleep_zstddev)) / 2.0 + \
+                            tf.log(self.sleep_zstddev) +  math.log(2 * np.pi) / 2.0
+        self.sleep_z_loss = tf.reduce_mean(tf.reduce_sum(self.sleep_z_loss, axis=1))
+
+        self.i_loss = self.wake_kl_loss * args.ratio + self.sleep_z_loss
 
         self.d_vars = [var for var in tf.global_variables() if 'd_net' in var.name]
         self.g_vars = [var for var in tf.global_variables() if 'g_net' in var.name]
