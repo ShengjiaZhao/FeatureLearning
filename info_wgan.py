@@ -167,7 +167,7 @@ class GenerativeAdversarialNet(object):
             tf.summary.scalar('d_loss_x', self.d_loss_x),
             tf.summary.scalar('d_loss_g', self.d_loss_g),
             tf.summary.scalar('i_loss_wake', self.wake_kl_loss),
-            tf.summary.scalar('i_loss_sleep', self.sleep_kl_loss),
+            tf.summary.scalar('i_loss_sleep', self.sleep_z_loss),
             tf.summary.scalar('i_loss', self.i_loss),
             tf.summary.scalar('i_loss_xwake', self.wake_x_loss),
             tf.summary.scalar('gan_loss', self.gan_loss)
