@@ -18,7 +18,8 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('-n', '--netname', type=str, default='mnist', help='Name of the session')
 parser.add_argument('-g', '--gpu', type=str, default='3', help='GPU to use')
-parser.add_argument('-i', '--ratio', type=float, default=2.0, help='Number of iterations for log likelihood evaluation')
+parser.add_argument('-i', '--zratio', type=float, default=2.0, help='Number of iterations for log likelihood evaluation')
+parser.add_argument('-i', '--xratio', type=float, default=0.0, help='Number of iterations for log likelihood evaluation')
 args = parser.parse_args()
 
 
@@ -147,10 +148,10 @@ class GenerativeAdversarialNet(object):
 
         self.sleep_zmean, self.sleep_zstddev = inference(self.g, self.z_dim, reuse=True)
         self.sleep_z_loss = tf.div(tf.square(self.sleep_zmean - self.z), tf.square(self.sleep_zstddev)) / 2.0 + \
-                            tf.log(self.sleep_zstddev) +  math.log(2 * np.pi) / 2.0
+                            tf.log(self.sleep_zstddev) + math.log(2 * np.pi) / 2.0
         self.sleep_z_loss = tf.reduce_mean(tf.reduce_sum(self.sleep_z_loss, axis=1))
 
-        self.i_loss = self.wake_kl_loss * args.ratio + self.sleep_z_loss
+        self.i_loss = self.wake_kl_loss * args.zratio + self.wake_x_loss * args.xratio + self.sleep_z_loss
 
         self.d_vars = [var for var in tf.global_variables() if 'd_net' in var.name]
         self.g_vars = [var for var in tf.global_variables() if 'g_net' in var.name]
@@ -268,7 +269,7 @@ if __name__ == '__main__':
         print("unknown dataset")
         exit(-1)
 
-    c = GenerativeAdversarialNet(dataset, name=args.netname+('_%.2f' % args.ratio))
+    c = GenerativeAdversarialNet(dataset, name=args.netname+('_%.2f_%.2f' % (args.xratio, args.zratio)))
     c.train()
 
 
