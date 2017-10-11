@@ -18,8 +18,8 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('-n', '--netname', type=str, default='mnist', help='Name of the session')
 parser.add_argument('-g', '--gpu', type=str, default='3', help='GPU to use')
-parser.add_argument('-i', '--zratio', type=float, default=2.0, help='Number of iterations for log likelihood evaluation')
-parser.add_argument('-i', '--xratio', type=float, default=0.0, help='Number of iterations for log likelihood evaluation')
+parser.add_argument('-z', '--zratio', type=float, default=2.0, help='Number of iterations for log likelihood evaluation')
+parser.add_argument('-x', '--xratio', type=float, default=0.0, help='Number of iterations for log likelihood evaluation')
 args = parser.parse_args()
 
 
