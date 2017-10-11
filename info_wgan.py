@@ -3,6 +3,8 @@ import numpy as np
 import time
 import subprocess
 import math, os
+import matplotlib
+matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from pattern_generator import *
 import scipy.misc as misc
@@ -55,6 +57,8 @@ def discriminator_large(x, reuse=False):
 
 def generator_large(z, data_dims, range, reuse=False):
     with tf.variable_scope('g_net') as vs:
+        if reuse:
+            vs.reuse_variables()
         fc1 = fc_bn_relu(z, 1024)
         fc2 = fc_bn_relu(fc1, 1024)
         fc3 = fc_bn_relu(fc2, data_dims[0]/16*data_dims[1]/16*512)
@@ -71,6 +75,8 @@ def generator_large(z, data_dims, range, reuse=False):
 
 def generator_small(z, data_dims, range, reuse=False):
     with tf.variable_scope('g_net') as vs:
+        if reuse:
+            vs.reuse_variables()
         fc1 = fc_bn_relu(z, 1024)
         fc2 = fc_bn_relu(fc1, data_dims[0]/4*data_dims[1]/4*128)
         fc2 = tf.reshape(fc2, tf.stack([tf.shape(fc2)[0], data_dims[0]/4, data_dims[1]/4, 128]))
@@ -103,22 +109,22 @@ class GenerativeAdversarialNet(object):
         self.x = tf.placeholder(tf.float32, [None] + self.data_dims)
 
         if "large" in name:
-            generator = generator_small
-            discriminator = discriminator_small
-            inference = inference_small
-        else:
             generator = generator_large
             discriminator = discriminator_large
+            inference = inference_small
+        else:
+            generator = generator_small
+            discriminator = discriminator_small
             inference = inference_small
 
         # GAN loss part
         self.g = generator(self.z, data_dims=self.data_dims, range=dataset.range)
-        self.d = discriminator(self.x, data_dims=self.data_dims)
-        self.d_ = discriminator(self.g, data_dims=self.data_dims, reuse=True)
+        self.d = discriminator(self.x)
+        self.d_ = discriminator(self.g, reuse=True)
 
         epsilon = tf.random_uniform([], 0.0, 1.0)
         x_hat = epsilon * self.x + (1 - epsilon) * self.g
-        d_hat = discriminator(x_hat, data_dims=self.data_dims, reuse=True)
+        d_hat = discriminator(x_hat, reuse=True)
 
         ddx = tf.gradients(d_hat, x_hat)[0]
         ddx = tf.sqrt(tf.reduce_sum(tf.square(ddx), axis=(1, 2, 3)))
@@ -130,21 +136,19 @@ class GenerativeAdversarialNet(object):
         self.g_loss = -tf.reduce_mean(self.d_)
         self.gan_loss = self.d_loss + self.g_loss
 
-        self.d_vars = [var for var in tf.global_variables() if 'd_net' in var.name]
-        self.g_vars = [var for var in tf.global_variables() if 'g_net' in var.name]
-        self.i_vars = [var for var in tf.global_variables() if 'i_net' in var.name]
-
         # Inference Part
-        self.wake_x = tf.placeholder(tf.float32, shape=[None] + self.data_dims)
-        self.wake_zmean, self.wake_zstddev = inference(self.wake_x, self.z_dim)
+        self.wake_zmean, self.wake_zstddev = inference(self.x, self.z_dim)
         self.wake_kl_loss = -tf.log(self.wake_zstddev) + 0.5 * tf.square(self.wake_zstddev) + 0.5 * tf.square(self.wake_zmean) - 0.5
         self.wake_kl_loss = tf.reduce_mean(tf.reduce_sum(self.wake_kl_loss, axis=1))
 
-        self.sleep_zmean, self.sleep_zstddev = inference(self.g, self.z_dim)
+        self.sleep_zmean, self.sleep_zstddev = inference(self.g, self.z_dim, reuse=True)
         self.sleep_kl_loss = -tf.log(self.wake_zstddev) + 0.5 * tf.square(self.wake_zstddev) + 0.5 * tf.square(self.wake_zmean) - 0.5
         self.sleep_kl_loss = tf.reduce_mean(tf.reduce_sum(-self.sleep_kl_loss, axis=1))
         self.i_loss = self.wake_kl_loss * args.ratio + self.sleep_kl_loss
 
+        self.d_vars = [var for var in tf.global_variables() if 'd_net' in var.name]
+        self.g_vars = [var for var in tf.global_variables() if 'g_net' in var.name]
+        self.i_vars = [var for var in tf.global_variables() if 'i_net' in var.name]
         self.d_train = tf.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5, beta2=0.9).minimize(self.d_loss, var_list=self.d_vars)
         self.g_train = tf.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5, beta2=0.9).minimize(self.g_loss, var_list=self.g_vars)
         self.i_train = tf.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5, beta2=0.9).minimize(self.i_loss, var_list=self.i_vars)
@@ -165,16 +169,19 @@ class GenerativeAdversarialNet(object):
         # self.image = tf.summary.image('generated images', self.g, max_images=10)
         self.saver = tf.train.Saver(tf.global_variables())
 
-        self.fig, self.ax = None, None
-        self.model_path = "log/%s" % name
-        self.fig_path = "%s/fig" % self.model_path
+        self.model_path = self.make_model_path(name)
+        self.fig_path = os.path.join(self.model_path, 'fig')
+        os.makedirs(self.fig_path)
+
+    def make_model_path(self, name):
+        log_path = os.path.join('log', name)
+        if os.path.isdir(log_path):
+            subprocess.call(('rm -rf %s' % log_path).split())
+        os.makedirs(log_path)
+        return log_path
 
     def visualize(self, batch_size, sess, save_idx):
-        if self.fig is None:
-            self.fig, self.ax = plt.subplots()
-        else:
-            self.ax.cla()
-        bz = np.random.normal(-1, 1, [batch_size, self.hidden_num]).astype(np.float32)
+        bz = np.random.normal(-1, 1, [batch_size, self.z_dim]).astype(np.float32)
         image = sess.run(self.g, feed_dict={self.z: bz})
         num_row = int(math.floor(math.sqrt(batch_size)))
         canvas = np.zeros((self.data_dims[0]*num_row, self.data_dims[1]*num_row, self.data_dims[2]))
@@ -185,12 +192,8 @@ class GenerativeAdversarialNet(object):
 
         if canvas.shape[-1] == 1:
             misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas[:, :, 0])
-            self.ax.imshow(canvas[:, :, 0], cmap=plt.get_cmap('Greys'))
         else:
             misc.imsave("%s/%d.png" % (self.fig_path, save_idx), canvas)
-            self.ax.imshow(canvas)
-        plt.draw()
-        plt.pause(0.01)
 
     def train(self):
         with tf.Session(config=tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))) as sess:
@@ -211,7 +214,7 @@ class GenerativeAdversarialNet(object):
 
                     bx = self.dataset.next_batch(batch_size)
                     bz = np.random.normal(-1, 1, [batch_size, self.z_dim]).astype(np.float32)
-                    d_loss, g_loss, i_loss, d_loss_g, d_loss_x, _, _ = \
+                    d_loss, g_loss, i_loss, d_loss_g, d_loss_x, _, _, _ = \
                         sess.run([self.d_loss, self.g_loss, self.i_loss, self.d_loss_g, self.d_loss_x,
                                   self.d_train, self.g_train, self.i_train],
                                  feed_dict={self.x: bx, self.z: bz})
@@ -230,19 +233,20 @@ class GenerativeAdversarialNet(object):
 
 if __name__ == '__main__':
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
-    netname = 'mnist'
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+
     dataset = None
-    if 'mnist' in netname:
+    if 'mnist' in args.netname:
         dataset = MnistDataset()
-    elif 'cifar' in netname:
+    elif 'cifar' in args.netname:
         dataset = CifarDataset()
-    elif 'celeba' in netname:
+    elif 'celeba' in args.netname:
         dataset = CelebADataset(db_path='/ssd_data/CelebA')
     else:
         print("unknown dataset")
         exit(-1)
-    c = GenerativeAdversarialNet(dataset, name=netname)
+
+    c = GenerativeAdversarialNet(dataset, name=args.netname+('_%.2f' % args.ratio))
     c.train()
 
 
