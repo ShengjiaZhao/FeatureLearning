@@ -9,6 +9,16 @@ import scipy.misc as misc
 from abstract_network import *
 from dataset import *
 
+import argparse
+
+parser = argparse.ArgumentParser()
+# python elbo_mog.py --max_reg=0.5 --nll_bound=-3.0 --gpu=0
+
+parser.add_argument('-n', '--netname', type=str, default='mnist', help='Name of the session')
+parser.add_argument('-g', '--gpu', type=str, default='3', help='GPU to use')
+parser.add_argument('-i', '--ratio', type=float, default=2.0, help='Number of iterations for log likelihood evaluation')
+args = parser.parse_args()
+
 
 def lrelu(x, rate=0.1):
     return tf.maximum(tf.minimum(x * rate, 0), x)
@@ -133,7 +143,7 @@ class GenerativeAdversarialNet(object):
         self.sleep_zmean, self.sleep_zstddev = inference(self.g, self.z_dim)
         self.sleep_kl_loss = -tf.log(self.wake_zstddev) + 0.5 * tf.square(self.wake_zstddev) + 0.5 * tf.square(self.wake_zmean) - 0.5
         self.sleep_kl_loss = tf.reduce_mean(tf.reduce_sum(-self.sleep_kl_loss, axis=1))
-        self.i_loss = self.wake_kl_loss + self.sleep_kl_loss
+        self.i_loss = self.wake_kl_loss * args.ratio + self.sleep_kl_loss
 
         self.d_train = tf.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5, beta2=0.9).minimize(self.d_loss, var_list=self.d_vars)
         self.g_train = tf.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5, beta2=0.9).minimize(self.g_loss, var_list=self.g_vars)
