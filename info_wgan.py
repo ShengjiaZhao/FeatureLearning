@@ -81,7 +81,7 @@ def generator_small(z, data_dims, range, reuse=False):
         fc1 = fc_bn_relu(z, 1024)
         fc2 = fc_bn_relu(fc1, data_dims[0]/4*data_dims[1]/4*128)
         fc2 = tf.reshape(fc2, tf.stack([tf.shape(fc2)[0], data_dims[0]/4, data_dims[1]/4, 128]))
-        fc2 = tf.concat([fc2, tf.random_normal(shape=tf.stack([tf.shape(z)[0], 3]))], axis=-1)
+        fc2 = tf.concat([fc2, tf.random_normal(shape=tf.stack([tf.shape(z)[0], data_dims[0]/4, data_dims[1]/4, 3]))], axis=-1)
         conv1 = conv2d_t_bn_relu(fc2, 64, 4, 2)
         conv2 = tf.contrib.layers.convolution2d_transpose(conv1, data_dims[-1], 4, 2, activation_fn=tf.sigmoid)
         conv2 = conv2 * (range[1] - range[0]) + range[0]
